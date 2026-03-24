@@ -57,8 +57,8 @@ python3 main.py
 - `subprocess` (`pbcopy`/`pbpaste`)：无感操作 macOS 剪贴板。
 - `http.server`：内置超轻量级 Web 服务。
 
-📄 许可证
+## 📄 许可证
 MIT License
 
-🙏 致谢
+## 🙏 致谢
 感谢豆包团队提供优秀的语音识别功能。期待早日上线豆包输入法 MacOS 版
