@@ -233,17 +233,33 @@ def html_template() -> str:
         <img src="/douhua-logo.png" alt="Logo" class="logo" />
         <div>
           <h2 class="title">豆花语音输入: 基于豆包APP的语音输入法</h2>
-          <div class="subtitle">macOS 控制台 · 按住右 Command 说话，松开自动写入(骂人)</div>
+          <div class="subtitle">macOS 控制台 · 按住左 or 右 Command 说话，松开自动写入(骂人)</div>
         </div>
       </div>
       <div class="controls">
         <button class="btn-primary" onclick="startVoice()">启动语音输入</button>
         <button class="btn-ghost" onclick="stopVoice()">停止</button>
+        <button class="btn-ghost" onclick="restartVoice()" style="border-color: rgba(249, 115, 22, 0.45); color: #fed7aa;">重启监听器</button>
         <span id="status" class="status stopped">已停止</span>
       </div>
     </section>
     <section class="panel">
       <div class="grid">
+        <div class="field">
+          <label>hold_key</label>
+          <span class="desc">触发语音的长按按键</span>
+          <select id="holdKey" style="width: 100%; border-radius: 10px; border: 1px solid rgba(148, 163, 184, 0.25); background: rgba(2, 6, 23, 0.72); color: var(--text-main); padding: 9px 10px; font-size: 14px; outline: none; margin-top: 2px;">
+            <option value="cmd_r">右 Command (推荐)</option>
+            <option value="cmd_l">左 Command</option>
+            <option value="cmd">左右 Command 均可</option>
+            <option value="option_r">右 Option</option>
+            <option value="option_l">左 Option</option>
+            <option value="option">左右 Option 均可</option>
+            <option value="ctrl_r">右 Control</option>
+            <option value="ctrl_l">左 Control</option>
+            <option value="ctrl">左右 Control 均可</option>
+          </select>
+        </div>
         <div class="field">
           <label>hold_threshold_ms</label>
           <span class="desc">长按唤醒阈值，防误触</span>
@@ -292,10 +308,11 @@ def html_template() -> str:
   <script>
     let isEditing = false;
     
-    // 监听所有输入框的聚焦和失焦事件
-    document.querySelectorAll('input[type="number"]').forEach(input => {
+    // 监听所有输入框和选择框的聚焦和失焦事件，防止自动刷新覆盖
+    document.querySelectorAll('input[type="number"], select').forEach(input => {
       input.addEventListener('focus', () => { isEditing = true; });
       input.addEventListener('blur', () => { isEditing = false; });
+      input.addEventListener('change', () => { isEditing = true; }); // 专为 select 增加
     });
 
     async function req(url, method="GET", body=null) {
@@ -310,6 +327,7 @@ def html_template() -> str:
       
       // 只有在用户没有在输入时，才更新输入框的值，避免打字被打断
       if (!isEditing) {
+        document.getElementById('holdKey').value = d.config.hold_key;
         document.getElementById('holdThreshold').value = d.config.hold_threshold_ms;
         document.getElementById('normalDelay').value = d.config.normal_delay_ms;
         document.getElementById('restoreDelay').value = d.config.clipboard_restore_delay_ms;
@@ -335,8 +353,18 @@ def html_template() -> str:
 
     async function startVoice(){ await req('/api/start', 'POST'); await refresh(); }
     async function stopVoice(){ await req('/api/stop', 'POST'); await refresh(); }
+    async function restartVoice(){ 
+      const btn = document.querySelector('button[onclick="restartVoice()"]');
+      const oldText = btn.innerText;
+      btn.innerText = '重启中...';
+      await req('/api/restart', 'POST'); 
+      await refresh(); 
+      btn.innerText = '已重启 ✓';
+      setTimeout(() => { btn.innerText = oldText; }, 1500);
+    }
     async function saveConfig() {
       await req('/api/config', 'POST', {
+        hold_key: document.getElementById('holdKey').value,
         hold_threshold_ms: Number(document.getElementById('holdThreshold').value),
         normal_delay_ms: Number(document.getElementById('normalDelay').value),
         clipboard_restore_delay_ms: Number(document.getElementById('restoreDelay').value),
@@ -440,6 +468,7 @@ class WebConsole:
                             "running": web_console.orchestrator.state.running,
                             "recording": web_console.orchestrator.state.recording,
                             "config": {
+                                "hold_key": web_console.config.hold_key,
                                 "hold_threshold_ms": web_console.config.hold_threshold_ms,
                                 "normal_delay_ms": web_console.config.normal_delay_ms,
                                 "clipboard_restore_delay_ms": web_console.config.clipboard_restore_delay_ms,
@@ -463,10 +492,26 @@ class WebConsole:
                     web_console.listener.stop()
                     self._json({"ok": True})
                     return
+                if self.path == "/api/restart":
+                    web_console.orchestrator.stop()
+                    web_console.listener.stop()
+                    import time
+                    time.sleep(0.5)
+                    web_console.listener.start()
+                    web_console.orchestrator.start()
+                    self._json({"ok": True})
+                    return
                 if self.path == "/api/config":
                     length = int(self.headers.get("Content-Length", "0"))
                     raw = self.rfile.read(length) if length else b"{}"
                     payload = json.loads(raw.decode("utf-8"))
+                    
+                    # Track if we need to restart listener due to key change
+                    key_changed = False
+                    if "hold_key" in payload and payload["hold_key"] != web_console.config.hold_key:
+                        web_console.config.hold_key = payload["hold_key"]
+                        key_changed = True
+                        
                     if "hold_threshold_ms" in payload:
                         web_console.config.hold_threshold_ms = int(payload["hold_threshold_ms"])
                     if "normal_delay_ms" in payload:
@@ -478,8 +523,10 @@ class WebConsole:
                     if "post_submit_grace_ms" in payload:
                         web_console.config.post_submit_grace_ms = int(payload["post_submit_grace_ms"])
                     web_console.config_store.save(web_console.config)
-                    # 同步更新 listener 的长按阈值
+                    # 同步更新 listener 的长按阈值和按键
                     web_console.listener.hold_threshold_ms = web_console.config.hold_threshold_ms
+                    if key_changed:
+                        web_console.listener.hold_key = web_console.config.hold_key
                     self._json({"ok": True})
                     return
                 self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)

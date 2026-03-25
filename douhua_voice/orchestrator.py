@@ -32,6 +32,7 @@ class VoiceInputOrchestrator:
         self.logger = logger
         self.state = RuntimeState()
         self._lock = threading.Lock()
+        self.listener = None  # 将在 app.py 中注入
 
     def on_hold_press(self) -> None:
         with self._lock:
@@ -44,6 +45,12 @@ class VoiceInputOrchestrator:
         with self._lock:
             self.state.baseline_clipboard_text = baseline_text
         self.logger.append(f"会话#{sid} 开始：触发豆包语音快捷键")
+        
+        # 保护期：让 listener 在接下来的一小段时间内忽略所有的松开事件
+        # 这可以防止我们模拟发送的 Ctrl+D 中的松开事件被误认为是物理按键的松开
+        if getattr(self, "listener", None) is not None:
+            self.listener.ignore_releases_for(0.3)
+            
         self.keyboard.send_combo(self.config.trigger_combo)
 
     def on_hold_release(self) -> None:

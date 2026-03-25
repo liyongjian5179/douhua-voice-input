@@ -32,6 +32,9 @@ def main() -> None:
         on_release=orchestrator.on_hold_release,
         hold_threshold_ms=config.hold_threshold_ms,
     )
+    # Inject listener into orchestrator so it can toggle ignore_releases_for
+    orchestrator.listener = listener
+    
     web = WebConsole(
         config_store=config_store,
         config=config,
