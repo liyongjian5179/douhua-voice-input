@@ -8,7 +8,7 @@ from pathlib import Path
 
 @dataclass
 class AppConfig:
-    trigger_combo: str = "ctrl+d"
+    trigger_combo: str = "option+d"
     submit_key: str = "enter"
     cancel_key: str = "esc"
     hold_key: str = "cmd_r"

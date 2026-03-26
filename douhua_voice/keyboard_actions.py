@@ -12,6 +12,8 @@ KEY_MAP = {
     "ctrl": Key.ctrl,
     "cmd": Key.cmd,
     "cmd_r": Key.cmd_r,
+    "alt": Key.alt,
+    "option": Key.alt,
     "d": "d",
 }
 
